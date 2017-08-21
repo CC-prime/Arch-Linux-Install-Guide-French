@@ -1,0 +1,807 @@
+= Guide d'installation d'Arch Linux en français
+Aymeric MASSE <aym.masse@gmail.com>
+2017-08
+:numbered:
+:source-highlighter:
+
+NOTE: Ce guide d'installation d'Arch Linux est un projet personnel pour
+m'initier à l'utilisation du langage de documentation
+http://asciidoctor.org/[AsciiDoc]. Il est volontairement concis et simplifié. Ce
+guide est basé sur le
+https://wiki.archlinux.org/index.php/Installation_guide[guide d'installation] du
+wiki anglophone officiel et sur le guide écrit par
+http://frederic.bezies.free.fr/blog/[M. Frédéric BEZIES]. Merci à lui.
+
+WARNING: Ce guide vous permettra d'installer une distribution Arch Linux en
+français sur un ordinateur 64 bits avec UEFI. Je ne compte pas supporter une
+installation sur une autre architecture ou avec BIOS. Du moins pas pour le
+moment.
+
+NOTE: À l'heure de l'écriture de ce guide, l'ISO officielle d'Arch Linux est
+celle d'août 2017.
+
+NOTE: Ce document est proposé sous license
+https://creativecommons.org/licenses/by-sa/4.0/[CC-BY-SA 4.0].
+
+== Préparation
+
+NOTE: Une installation d'Arch Linux devrait fonctionner sur n'importe
+quelle machine x86_64 (64 bits) possédant au minimum 512 Mo de mémoire vive. Une
+installation basique et minimale du groupe `base` prends à peu près 800 Mo
+d'espace disque.
+
+TIP: Même si l'utilisation des scripts d'installation reste simple, une
+expérience comfortable de la ligne de commande et d'outils comme `nano` ou `vim`
+est recommandée.
+
+=== Configurer le clavier
+
+Par défaut, la disposition du clavier est en QWERTY
+https://en.wikipedia.org/wiki/File:KB_United_States-NoAltGr.svg[US]. Pour
+modifier cela, on utilisera l'outil `loadkeys`. Pour lister la liste des
+configurations disponibles, on entre cette commande dans le terminal :
+
+----
+ls /usr/share/kbd/keymaps/**/*.map.gz
+----
+
+On choisi celle qui est adaptée à notre clavier ou nos envies. Typiquement ici,
+c'est la configuration `fr` qui m'intéresse. On entre (en faisant attention au
+placement des touches en QWERTY) :
+
+----
+loadkeys fr
+----
+
+Si vous voulez modifier la police, vous pouvez faire de même avec l'outil
+`setfont`, et les polices qui se trouvent dans le dossier
+`/usr/share/kbd/consolefonts/`.
+
+=== Vérifier le mode de démarrage
+
+On va tout d'abord vérifier que l'on a bien démarrer en mode UEFI. Pour ce faire
+on liste le répertoire `efivars` :
+
+----
+ls /sys/firmware/efi/efivars
+----
+
+Si le répertoire n'existe pas, c'est que la machine a démarré en mode BIOS.
+Veuillez vous référer au manuel de votre carte mère.
+
+=== Se connecter à Internet
+
+L'ISO d'installation d'Arch Linux va récupérer les paquets nécessaires par
+Internet. Il est donc nécessaire de vous y connecter. Si vous êtes branché en
+Ethernet, normalement il n'y a rien à faire. En wifi, nous allons nous servir
+des outils `wifi-menu` et `netctl`. Tout d'abord, lancez `wifi-menu` :
+
+----
+wifi-menu
+----
+
+Cet outil va lister les réseaux sans fils disponibles. Choisissez celui qui vous
+intéresse. Donnez un nom à la connexion, et rentrez le mot de passe si
+nécessaire. Il suffit maintenant de rentrer :
+
+----
+netctl start nom-de-la-connexion # <1>
+----
+<1> À remplacer évidemment par le nom que vous avez donné au réseau.
+
+Vous voilà désormais connecté en wifi. Simple non ?
+
+Pour vérifier que nous avons bien accès à Internet, il suffit de rentrer :
+
+----
+ping archlinux.org
+----
+
+Si aucune réponse n'est reçue, c'est qu'un problème est survenu lors de votre
+configuration. Je vous invite à vous référer aux pages du wifi anglophone sur la
+configuration d'un
+https://wiki.archlinux.org/index.php/Network_configuration[réseau filaire] et
+celle d'un
+https://wiki.archlinux.org/index.php/Wireless_network_configuration[réseau sans
+fil].
+
+=== Mettre à jour l'horloge système
+
+Nous allons utiliser `timedatectl` pour s'assurer que l'horloge est bien à jour :
+
+----
+timedatectl set-ntp true
+----
+
+On entre ensuite :
+
+----
+timedatectl status
+----
+
+pour s'assurer que le service fonctionne correctement.
+
+=== Partitionnement du disque
+
+TIP: Pour le partitionnement, si vous avez peur de faire des bêtises, il est
+plus prudent de passer par un LiveCD comme http://gparted.org/[gParted].
+
+IMPORTANT: Pour une installation en mode UEFI, il vous faut *absolument* une table
+de partition GPT.
+
+Pour partitionner notre disque en mode UEFI, nous allons utiliser l'outil
+`cgdisk`.
+
+Voici un tableau récapitulant les informations générales dont vous aurez besoin.
+Remplacez évidemment les références par ce qui vous arrange.
+
+[cols="4*", options="header"]
+|===
+|Référence
+|Point de montage
+|Taille
+|Système de fichiers
+
+|/dev/sda1
+|/boot
+|512 Mo
+|Fat32
+
+
+|/dev/sda2
+|
+|Taille de la RAM
+|swap
+
+|/dev/sda3
+|/
+|20 Go
+|ext4
+
+|/dev/sda4
+|/home
+|Le reste du disque
+|ext4
+|===
+
+NOTE: La partition `/boot` doit être étiquetée en `EF00` à sa création. La
+partition `swap` doit quant à elle être étiquetée en `8200`.
+
+=== Formatter les partitions
+
+Une fois que les partitions ont été créés, il convient maintenant de les
+formatter. Chaque partition doit être correctement formatée avec un
+https://wiki.archlinux.org/index.php/File_systems[système de fichier]
+approprié. Nous allons maintenant formatter nos partitions grâce à l'outil
+`mkfs` et en utilisant les systèmes de fichier décrits dans le tableau de la
+partie précédente.
+
+----
+mkfs.fat -F32 /dev/sda1
+mkfs.ext4 /dev/sda3
+mkfs.ext4 /dev/sda4
+----
+
+Pour le swap :
+
+----
+mkswap /dev/sda2
+swapon /dev/sda2
+----
+
+IMPORTANT: Encore une fois, n'oubliez pas remplacer les noms des partitions par
+celles que vous avez choisies.
+
+=== Montage des systèmes de fichier
+
+Nous allons maintenant monter les systèmes de fichier que nous avons créé. On
+monte tout d'abord la partition `/` grâce à l'outil `mount` :
+
+----
+mount /dev/sda3 /mnt
+----
+
+Il suffit maintenant de créer les points de montages pour les partitions `/boot`
+et `/home` :
+
+----
+mkdir /mnt/{boot,home}
+----
+
+On peut maintenant les monter :
+
+----
+mount /dev/sda1 /mnt/boot
+mount /dev/sda4 /mnt/home
+----
+
+IMPORTANT: Encore et toujours, pensez à remplacer les noms des partitions par
+celles que vous avez choisies.
+
+On peut maintenant passer à l'installation de la base.
+
+== Installation
+
+=== Sélection des miroirs
+
+La récupération des paquets de la distribution se fait par le biais de miroirs.
+Il est utile de sélectionner le miroir la plus proche géographiquement parlant
+afin d'optimiser la récupération de ces paquets. La liste des miroirs se trouve
+dans `/etc/pacman.d/mirrorlist`. Nous allons donc utiliser `nano` (ou votre
+éditeur préféré) pour modifier cette liste et ainsi garder le miroir qui nous
+intéresse. En France, il s'agira de *préférence* de `mir.archlinux.fr` ou de
+`archlinux.polymorf.fr`. On rentre donc :
+
+----
+nano /etc/pacman.d/mirrorlist
+----
+
+Pour vous faciliter la tâche, voici quelques raccourcis :
+
+On peut utiliser la raccourci clavier `ALT+R` pour remplacer une chaîne de
+caractères par une autre. On entre donc la commande, suivit de `Server`, la
+touche entrée, et enfin `#Server`. Cela commentera (désactivera) tous les
+serveurs de la liste.
+
+Avec la raccourci `CTRL+W`, on peut rechercher une chaîne de caractères. On
+entre donc la raccourci suivit du nom du pays dans lequel on réside, dans mon
+cas `France`. Cela place mon curseur sur la première ligne correspondant à ma
+recherche. Ici, cela me place donc sur la premier serveur français. Il nous
+suffit maintenant de décommenter cette ligne. On enlève donc le `#` juste devant
+le `Server`.
+
+Un `CTRL+X` suivit de la touche `y` nous permet de quitter le fichier en
+enregistrant les modifications.
+
+=== Installation des paquets de base
+
+Maintenant que les miroirs sont correctement triés, on peut commencer
+l'installation. L'outil `pacstrap` permet d'installer des paquets depuis le
+LiveCD directement dans le futur système. On rentre donc :
+
+----
+pacstrap /mnt base base-devel
+pacstrap /mnt zip unzip p7zip vim mc alsa-utils syslog-ng mtools dosfstools lsb-release ntfs-3g exfat-utils # <1>
+----
+<1> Cette ligne ajoute quelques outils bien pratiques.
+
+NOTE: Si l'on veut un noyau linux long terme, il faut rajouter `linux-lts` à la
+deuxième ligne. Le paquet `ntfs-3g` permet d'utiliser des disques formatés en
+`ntfs` (Windows). Si vous n'en avez pas l'utilité, vous pouvez tout à fait
+l'ignorer. Le paquet `exfat-utils` permet quant à lui de gérer les systèmes de
+fichier `exfat`, typiquement employés sur les cartes SD de grande capacité (SDHC
+et SDXC).
+
+== Configuration du système
+
+Maintenant que le système de base est installé, il faut le configurer.
+
+=== Fstab
+
+Le fichier `fstab` permet de définir les partitions disponibles. Pour le
+générer, il suffit de rentrer :
+
+----
+genfstab -U -p /mnt >> /mnt/etc/fstab
+----
+
+=== Chroot
+
+Nous allons maintenant « entrer » dans le système :
+
+----
+arch-chroot /mnt
+----
+
+Nous voilà maintenant connecté en tant que `root` (super-utilisateur) sur le
+système fraichement installé.
+
+=== Fuseau horaire
+
+Pour configurer le fuseau horaire, on créé un lien symbolique :
+
+----
+ln -sf /usr/share/zoneinfo/Region/Ville /etc/localtime
+----
+
+En France métropolitaine, nous aurons donc :
+
+----
+ln -sf /usr/share/zoneinfo/Europe/Paris /etc/localtime
+----
+
+Maintenant que le fuseau horaire est configuré, nous allons synchroniser
+l'horloge système.
+
+WARNING: Si vous utilisez votre système en double démarrage avec Windows, il
+existe deux manières de procéder. Soit vous configurez Windows afin qu'il
+utilise une horloge UTC (déconseillé pour les Windows avant Windows 7), soit
+vous configurez votre partition Linux afin qu'elle utilise une horloge locale.
+La première option est conseillée si votre version de Windows est suffisamment
+récente. Si vous comptez tout de même utiliser la seconde option, il faudra
+remplacer `utc` par `localtime` dans la commande suivante.
+
+----
+hwclock --systohc --utc
+----
+
+=== Langue
+
+Voici un tableau récapitulant quelques infos pratiques concernant les pays
+francophones :
+
+[cols="3*", options="header"]
+|===
+|Pays
+|Locale (LANG)
+|Clavier (KEYMAP)
+
+|Belgique
+|fr_BE.UTF-8
+|be-latin1
+
+|Canada
+|fr_CA.UTF-8
+|cf
+
+|France
+|fr_FR.UTF-8
+|fr-latin9
+
+|Luxembourg
+|fr_LU.UTF-8
+|fr-latin9
+
+|Suisse
+|fr_CH.UTF-8
+|fr_CH
+|===
+
+Pour générer les localisations, il faut décommenter `en_US.UTF-8 UTF-8` et votre
+localisation dans le fichier `/etc/locale.gen`. On peut ensuite les
+générer avec :
+
+----
+locale-gen
+----
+
+On peut ensuite configurer la langue dans le fichier `/etc/locale.conf` (à créer
+si besoin). Remplacez évidemment par la localisation voulue :
+
+----
+LANG=fr_FR.UTF-8
+LC_COLLATE=C # <1>
+----
+<1> Cette ligne est nécessaire si on apprécie d'avoir le tri par la « casse »
+(majuscule puis minuscule) activé.
+
+Pour modifier le clavier, il suffit de modifier (ou créer) le fichier
+`/etc/vconsole.conf` avec la localisation et la police voulues :
+
+----
+KEYMAP=fr-latin9
+FONT=lat9w-16
+----
+
+=== Nom de la machine
+
+Le nom de la machine est contenu dans le fichier `/etc/hostname`. Il suffit de
+taper le nom sur la première ligne du fichier. Ou encore :
+
+----
+echo nom-de-la-machine > /ect/hostname # <1>
+----
+<1> À remplacer par le nom voulu évidemment.
+
+=== Configuration réseau
+
+Le nouvel environnement n'aura pas d'accès réseau au redémarrage. Pour cela, il
+faut installer une gestionnaire de connexion. Plusieurs choix sont disponibles,
+un des plus populaires étant `NetworkManager` :
+
+----
+pacman -Syy networkmanager # <1>
+systemctl enable NetworkManager # <2>
+----
+<1> Cette ligne installe le gestionnaire de connexion.
+<2> Cette ligne active le service au démarrage.
+
+TIP: Des alternatives comme `connman`, `netctl`, ou encore `wicd` sont
+disponibles. À vous de choisir celui qui vous convient le mieux. Sachez juste
+qu'*un seul* gestionnaire de connexion ne doit être activé à la fois.
+
+WARNING: Si vous désirez utiliser des réseaux sans fils avec l'applet de
+`NetworkManager`, le paquet `gnome-keyring` est *indispensable*.
+
+=== Initramfs
+
+Cette étape est généralement optionnelle, parce que `mkinitpcio` a déjà été
+lancé lors de l'installation du noyau `linux`. Mais comme on dit, on est jamais
+trop prudent :
+
+----
+mkinitcpio -p linux # <1>
+----
+<1> Remplacez `linux` par `linux-lts` si vous désirez utiliser un noyau long
+terme.
+
+=== Mot de passe root
+
+Pour modifier le mot de passe utilisé par le compte `root` (super-utilisateur),
+on entre :
+
+----
+passwd
+----
+
+Il suffit de rentrer le mot de passe désiré, de confirmer, et le tour est joué.
+
+=== Gestionnaire de démarrage
+
+Nous allons maintenant installer et configurer le gestionnaire de démarrage.
+
+NOTE: Dans ce guide, j'ai choisi `grub` comme gestionnaire de démarrage. C'est
+un choix à la fois personnel et pratique : `grub` est stable, complet, et simple à
+utiliser. Des alternatives existent, comme `systemd-boot`, `Syslinux`, ou encore `rEFInd`. À
+vous de choisir celui qui vous convient le mieux.
+
+TIP: Si vous possédez un processeur Intel, pensez à installer le paquet
+`intel-ucode` avant de continuer.
+
+On installe `grub` :
+
+----
+pacman -S grub os-prober efibootmgr # <1>
+----
+<1> Le paquet `os-prober` est indispensable pour un double démarrage.
+
+On génère son fichier de configuration :
+
+----
+grub-mkconfig -o /boot/grub/grub.cfg
+----
+
+Avant de continuer, on vérifie la présence de la variable `efivars`. On entre :
+
+----
+mount
+----
+
+Si, dans la liste, on obtient une réponse du genre :
+
+----
+efivars on /sys/firmware/efi/efivars type efivars (rw,nosuid,nodev,noexec,relatime)
+----
+
+Alors on peut passer à l'étape suivante. Sinon, on entre :
+
+----
+mount -t efivarfs efivarfs /sys/firmware/efi/efivarfs
+----
+
+On installe maintenant `grub` sur le disque de démarrage :
+
+----
+grub-install --target=x86_64-efi --efi-directory=/boot --bootloader-id=arch_grub --recheck
+----
+
+Pour éviter des problèmes de démarrage par la suite, il est conseillé de
+rajouter les commandes suivantes :
+
+----
+mkdir /boot/EFI/boot
+cp /boot/EFI/arch_grub/grubx64.efi /boot/EFI/boot/bootx64.efi
+----
+
+== Redémarrage
+
+Maintenant que le système est installé et configuré, on peut sortir du `chroot` :
+
+----
+exit
+----
+
+On démonte manuellement les partitions pour détecter toute activité suspecte :
+
+----
+umount -R /mnt
+----
+
+Et on redémarre :
+
+----
+reboot
+----
+
+== Post-Installation
+
+Maintenant que le système de base est installé, on peut s'atteler à la suite.
+Tout d'abord, connectez-vous en tant que root avec le mot de passe que vous avez
+précisé en section <<Mot de passe root>>.
+
+=== Ajout d'un compte utilisateur
+
+Se connecter en root est fortement déconseillé, nous allons donc maintenant
+créer un compte utilisateur « normal » :
+
+----
+useradd -m -g wheel -c 'Nom complet de l’utilisateur' -s /bin/bash nom-de-l’utilisateur
+----
+
+Dans mon cas ce serait :
+
+----
+useradd -m -g wheel -c 'Aymeric MASSE' -s /bin/bash aymeric
+----
+
+TIP: Ajouter l'utilisateur au groupe `wheel` lui permettra d'avoir
+temporairement des droits super-utilisateur grâce à la commande `sudo`. La
+manipulation à faire pour cela est décrite un peu plus tard dans cette section.
+
+Maintenant que notre utilisateur est créé, il lui faut un mot de passe. Pour cela on rentre :
+
+----
+passwd nom-utilisateur
+----
+
+Dans mon cas :
+
+----
+passwd aymeric
+----
+
+Il nous suffit, comme pour le compte root en section <<Mot de passe root>>, de
+rentrer le mot de passe et de le confirmer.
+
+=== Accès à `sudo`
+
+NOTE: `sudo`, ou « **S**uper **U**ser *DO* », est une commande permettant à un utilisateur
+autorisé d'accéder aux droits `root` (super utilisateur) temporairement. Cela
+lui permet d'effectuer des tâches d'administration (comme installer des paquets)
+sans pour autant être toujours connecté avec le compte `root`, ce qui peut
+s'avérer dangereux.
+
+Pour donner accès à `sudo` à un utilisateur, il doit faire parti du group
+`wheel` (ce qui est déjà fait pour nous). Ensuite, il faut préciser à `sudo` que
+les membres du groupe `wheel` ont effectivement accès aux droits `root`. Pour ce
+faire on rentre :
+
+----
+visudo
+----
+
+Nous utilisons en fait le programme `vi` dans le fichier de configuration de
+`sudo`. Les contrôles sont un peu particuliers pour les non-initiés, mais la
+marche à suivre est simple :
+
+* Descendez le curseur jusque la ligne en dessous de `##Uncomment to allow
+members of group wheel to execute any command`.
+* Appuyez deux fois sur la touche `Suppr` afin de décommenter la ligne.
+* Appuyez sur la touche `:`
+* Tapez `wq`
+* Appuyez sur la touche `Entrée`
+
+Et voilà votre compte à les droits administrateurs.
+
+=== Codecs multimedia
+
+Nous allons installer l'ensemble des greffons `gstreamer` qui est le framework
+utilisé par de nombreux environnements de bureau pour gérer le multimedia.
+
+----
+pacman -S gst-plugins-{base,good,bad,ugly} gst-libav
+----
+
+Choisissez l'option par défaut à chaque fois.
+
+=== Installation de Xorg
+
+NOTE: Xorg est le serveur d'affichage utilisé dans l'écrasante majorité des
+distributions Linux depuis plus de 15 ans. Sans lui, pas d'interface graphique !
+
+Pour installer Xorg, rentrez :
+
+----
+pacman -S xorg-{server,xinit} xf86-input-libinput xdg-user-dirs # <1>
+----
+<1> Le paquet `xf86-input-libinput` permet de gérer tous les périphériques
+d'entrées, de la souris ou le clavier, au pavé tactile et la tablette graphique.
+Le paquet `xdg-user-dirs` permet de générer automatiquement les répertoires
+`Documents`, `Musique` etc dans votre `/home`.
+
+=== Pilotes graphiques
+
+Pour l'installation des pilotes graphiques, je vous invite à vous renseigner
+https://wiki.archlinux.org/index.php/Xorg#Driver_installation[ici] afin de
+comprendre en détails la liste possibles des pilotes pour votre materiel.
+
+Pour faire simple, nous allons uniquement installer les pilotes libres des
+cartes graphiques, ce qui conviendra à la grande majorité des utilisateurs. Pour
+ce désireux de jouer sous linux, je vous conseille de suivre les indications du
+wiki anglophone.
+
+[cols="2*", options="header"]
+|===
+|Marque
+|Pilote
+
+|AMD
+|xf86-video-amdgpu
+
+|ATI
+|xf86-video-ati
+
+|Intel
+|xf86-video-intel
+
+|Nvidia
+|xf86-video-nouveau
+|===
+
+=== Polices
+
+Nous allons installer quelques polices :
+
+----
+pacman -S ttf-{bitstream-vera,liberation,freefont,dejavu}
+----
+
+=== Impression
+
+Pour gérer l'impression, il suffit d'installer :
+
+----
+pacman -S cups hplip xsane foomatic-{db,db-ppds,db-gutenprint-ppds,db-nonfree,db-nonfreeppds} gutenprint
+----
+
+=== Bureautique
+
+Une alternative libre à Microsoft Office est
+https://www.libreoffice.org/[LibreOffice] :
+
+----
+pacman -S libreoffice-still-fr # <1>
+----
+<1> Si vous préférez la version  « récente » de LibreOffice, remplacez `still`
+par `fresh`.
+
+=== Multimedia
+
+Plusieurs lecteurs multimedia sont disponibles, au choix :
+
+* https://www.videolan.org/vlc/index.html[VLC] : `vlc`
+* https://mpv.io/[mpv] : `mpv`
+
+Beaucoup d'autres sont disponibles. Voici une
+https://wiki.archlinux.org/index.php/List_of_applications/Multimedia[liste] non
+exhaustive.
+
+=== Web
+
+Les deux grands navigateurs Web sont disponibles :
+
+* Firefox : `firefox-i18n-fr`
+* Chromium (Chrome) : `chromium`
+
+=== Environnement de bureau
+
+==== GNOME
+
+----
+pacman -S gnome gnome-extra system-config-printer unoconv pavucontrol pulseaudio pulseaudio-alsa
+systemctl enable gdm
+----
+
+==== KDE (Plasma 5)
+
+----
+pacman -S plasma-meta
+systemctl enable sddm
+----
+
+Si vous voulez tenter Plasma avec Wayland :
+
+----
+pacman -S plasma-wayland-session
+----
+
+Les apllications KDE sont nombreuses. Je vous laisse donc le soin de choisir
+celles qui vous intéressent. Ma petite recommendation :
+
+----
+pacman -S ark dolphin dolphin-plugins kcalc kio-extras konsole kwrite okular spectacle
+----
+
+==== Xfce
+
+----
+pacman -S xfce4 xfce4-goodies system-config-printer lightdm-gtk-greeter-settings pavucontrol pulseaudio pulseaudio-alsa
+sudo systemctl enable lightdm
+----
+
+==== MATE
+
+----
+pacman -S mate mate-extra system-config-printer lightdm-gtk-greeter-settings pavucontrol pulseaudio pulseaudio-alsa
+sudo systemctl enable lightdm
+----
+
+==== Commun
+
+Pour avoir le bon agencement des touches du clavier dans le gestionnaire de
+connexion, il faut entrer :
+
+----
+localectl set-x11-keymap fr # <1>
+----
+<1> À remplacer par l'agencement voulu.
+
+=== Annexe
+
+==== AUR
+
+L'AUR (ou **A**rch **U**ser **R**epository) est un dépôt *non-officiel* qui permet
+d'installer des paquets maintenus par le communauté.
+
+CAUTION: N'installer des paquets de l'AUR que si vous en avez entièrement
+confiance.
+
+Des programmes (communément appelés AUR helpers) permettent d'accéder à l'AUR
+facilement. `yaourt` est l'un deux. Pour installer `yaourt`, il faut modifier le
+fichier `/etc/pacman.conf` et rajouter à la fin :
+
+----
+[archlinuxfr]
+SigLevel = Never
+Server = http://repo.archlinux.fr/$arch
+----
+
+On recharge la liste des paquets :
+
+----
+pacman -Syy
+----
+
+Ensuite, on peut installer yaourt comme n'importe quel paquet :
+
+----
+pacman -S yaourt
+----
+
+`yaourt` s'utilise comme `pacman` :
+
+----
+yaourt -S nom-du-paquet
+----
+
+==== Multilib
+
+Le dépôt multilib permet d'installer des applications 32 bits (comme Skype) sur
+un système 64 bits. Il suffit de décommenter quelques lignes dans
+`/etc/pacman.conf` :
+
+----
+#[multilib]
+#Include = /etc/pacman.d/mirrorlist
+----
+
+et de recharger la liste des paquets :
+
+----
+pacman -Syy
+----
+
+==== Logs en clair
+
+Si on veut avoir les logs de démarrage en clair (pratique en cas de problème),
+il faut modifier le fichier `/etc/systemd/journald.conf` et remplacer :
+
+----
+#ForwardToSyslog=no
+----
+
+par :
+
+----
+ForwardToSyslog=yes
+----
